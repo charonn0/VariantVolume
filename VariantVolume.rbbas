@@ -64,11 +64,17 @@ Class VariantVolume
 		  Dim parts() As String = Split(Path, ".")
 		  Dim item As FolderItem = mVolume.Root
 		  For i As Integer = 0 To UBound(parts)
-		    If Not item.Directory And i <> UBound(parts) Then Return Nil
-		    item = item.Child(parts(i))
-		    If Me.ReadType(item) = TYPE_SYMLINK Then
-		      item = Me.Locate(Me.ReadValue(item, False))
+		    If item <> Nil Then
+		      Select Case True
+		      Case Me.ReadType(item) = TYPE_SYMLINK
+		        item = Me.Locate(Me.ReadValue(item, False))
+		      Case Not item.Directory And i <> UBound(parts)
+		        Return Nil
+		      End Select
+		    Else
+		      Return Nil
 		    End If
+		    item = item.Child(parts(i))
 		  Next
 		  Return item
 		End Function
@@ -99,7 +105,7 @@ Class VariantVolume
 
 	#tag Method, Flags = &h1
 		Protected Function ReadValue(File As FolderItem, Dereference As Boolean) As Variant
-		  If File.AbsolutePath = mVolume.Root.AbsolutePath Then 
+		  If File.AbsolutePath = mVolume.Root.AbsolutePath Then
 		    If Not Dereference Then Return mVolume.Root Else Raise New NilObjectException
 		  End If
 		  Dim reader As BinaryStream

@@ -79,12 +79,20 @@ End
 #tag WindowCode
 	#tag Event
 		Sub Open()
-		  Dim f As FolderItem = GetOpenFolderItem("")
-		  Dim v As VariantVolume = VariantVolume.Open(f)
+		  'Dim f As FolderItem = GetOpenFolderItem("")
+		  Dim v As VariantVolume = VariantVolume.Open(App.CreateNewTestPrefs)
+		  AddHandler v.DeserializeValue, WeakAddressOf DeserializerHandler
+		  AddHandler v.SerializeValue, WeakAddressOf SerializerHandler
 		  Me.Explore(v)
 		End Sub
 	#tag EndEvent
 
+
+	#tag Method, Flags = &h21
+		Private Function DeserializerHandler(Sender As VariantVolume, ByteStream As Readable, Type As Integer, ByRef Value As Variant) As Boolean
+		  Break
+		End Function
+	#tag EndMethod
 
 	#tag Method, Flags = &h0
 		Sub Explore(v As VariantVolume)
@@ -98,8 +106,26 @@ End
 	#tag EndMethod
 
 	#tag Method, Flags = &h1
+		Protected Function Locate(File As FolderItem) As String
+		  Dim s As String = File.AbsolutePath
+		  While InStr(s, "//") > 0
+		    s = ReplaceAll(s, "//", "/")
+		  Wend
+		  s = ReplaceAll(s, "/", ".")
+		  If Left(s, 1) = "." Then s = Right(s, s.Len - 1)
+		  Return s.Trim
+		End Function
+	#tag EndMethod
+
+	#tag Method, Flags = &h1
 		Protected Function RootDir() As FolderItem
 		  Return mVolume.GetValue("", False)
+		End Function
+	#tag EndMethod
+
+	#tag Method, Flags = &h21
+		Private Function SerializerHandler(Sender As VariantVolume, ByteStream As Writeable, ByRef Type As Integer, Value As Variant) As Boolean
+		  Break
 		End Function
 	#tag EndMethod
 
@@ -190,22 +216,30 @@ End
 		  Dim parent As String = Listbox1.CellTag(row, 0)
 		  Dim indent As Integer = Pair(Me.RowTag(row)).Right + 1
 		  Dim c As Integer = f.Count '- 1
-		  Dim items() As String
+		  Dim files(), folders() As String
 		  For i As Integer = 1 To c
 		    Dim item As FolderItem = f.Item(i)
 		    If Right(item.Name, 5) = ".META" And HideMetafiles Then Continue
-		    items.Append(item.Name)
+		    If item.Directory Then
+		      folders.Append(item.Name)
+		    Else
+		      files.Append(item.Name)
+		    End If
 		  Next
-		  items.Sort
-		  For i As Integer = UBound(items) DownTo 0
-		    Dim item As FolderItem = f.Child(items(i))
+		  files.Sort
+		  folders.Sort
+		  For i As Integer = UBound(folders) DownTo 0
+		    files.Insert(0, folders(i))
+		  Next
+		  For i As Integer = UBound(files) DownTo 0
+		    Dim item As FolderItem = f.Child(files(i))
 		    If item.Directory Then
 		      Listbox1.InsertFolder(row + 1, item.Name, indent)
 		      Listbox1.RowTag(Listbox1.LastIndex) = item:indent
 		    Else
 		      Dim type As Integer = mVolume.GetType(item.Name)
 		      Listbox1.InsertRow(row + 1, item.Name, indent)
-		      Dim tv As Pair = type:mVolume.GetValue(item.Name)
+		      Dim tv As Pair = type:mVolume.GetValue(Locate(item))
 		      Listbox1.RowTag(Listbox1.LastIndex) = tv
 		    End If
 		    Dim p As String = parent
