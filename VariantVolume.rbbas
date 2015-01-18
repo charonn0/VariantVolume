@@ -26,7 +26,7 @@ Class VariantVolume
 
 	#tag Method, Flags = &h0
 		Function CreateDirectory(Path As String) As Boolean
-		  Dim f As FolderItem = Me.Locate(Path)
+		  Dim f As FolderItem = Me.Locate(Path, True)
 		  If f = Nil Or f.Exists Then Return False
 		  f.CreateAsFolder
 		  Me.WriteType(f, TYPE_DIRECTORY)
@@ -35,8 +35,8 @@ Class VariantVolume
 	#tag EndMethod
 
 	#tag Method, Flags = &h0
-		Sub Delete(Path As String)
-		  Dim f As FolderItem = Me.Locate(Path)
+		Sub Delete(Path As String, Dereference As Boolean = False)
+		  Dim f As FolderItem = Me.Locate(Path, Dereference)
 		  If f <> Nil And f.AbsolutePath <> mVolume.Root.AbsolutePath Then
 		    f.Parent.Child(f.Name + ".META").Delete
 		    f.Delete
@@ -46,7 +46,7 @@ Class VariantVolume
 
 	#tag Method, Flags = &h0
 		Function GetType(Path As String) As Integer
-		  Dim meta As FolderItem = Me.Locate(Path)
+		  Dim meta As FolderItem = Me.Locate(Path, False)
 		  If meta <> Nil Then Return Me.ReadType(meta)
 		  Return TYPE_INVALID
 		End Function
@@ -54,27 +54,27 @@ Class VariantVolume
 
 	#tag Method, Flags = &h0
 		Function GetValue(Path As String, Dereference As Boolean = True) As Variant
-		  Dim f As FolderItem = Me.Locate(Path)
-		  If f <> Nil Then Return Me.ReadValue(f, Dereference)
+		  Dim f As FolderItem = Me.Locate(Path, Dereference)
+		  If f <> Nil Then Return Me.ReadValue(f)
 		End Function
 	#tag EndMethod
 
 	#tag Method, Flags = &h1
-		Protected Function Locate(Path As String) As FolderItem
+		Protected Function Locate(Path As String, Dereference As Boolean) As FolderItem
 		  Dim parts() As String = Split(Path, ".")
 		  Dim item As FolderItem = mVolume.Root
 		  For i As Integer = 0 To UBound(parts)
 		    If item <> Nil Then
+		      item = item.Child(parts(i))
 		      Select Case True
-		      Case Me.ReadType(item) = TYPE_SYMLINK
-		        item = Me.Locate(Me.ReadValue(item, False))
+		      Case Me.ReadType(item) = TYPE_SYMLINK And Dereference
+		        item = Me.Locate(Me.ReadValue(item), True)
 		      Case Not item.Directory And i <> UBound(parts)
 		        Return Nil
 		      End Select
 		    Else
 		      Return Nil
 		    End If
-		    item = item.Child(parts(i))
 		  Next
 		  Return item
 		End Function
@@ -104,10 +104,8 @@ Class VariantVolume
 	#tag EndMethod
 
 	#tag Method, Flags = &h1
-		Protected Function ReadValue(File As FolderItem, Dereference As Boolean) As Variant
-		  If File.AbsolutePath = mVolume.Root.AbsolutePath Then
-		    If Not Dereference Then Return mVolume.Root Else Raise New NilObjectException
-		  End If
+		Protected Function ReadValue(File As FolderItem) As Variant
+		  If File.AbsolutePath = mVolume.Root.AbsolutePath Then Return mVolume.Root
 		  Dim reader As BinaryStream
 		  Try
 		    #pragma BreakOnExceptions Off
@@ -135,6 +133,10 @@ Class VariantVolume
 		    ret = dt
 		  Case Variant.TypeDouble
 		    ret = reader.ReadDouble
+		  Case Variant.TypeSingle
+		    ret = reader.ReadSingle
+		  Case Variant.TypeLong
+		    ret = reader.ReadInt64
 		  Case Variant.TypeInteger
 		    ret = reader.ReadInt32
 		  Case Variant.TypeNil
@@ -147,11 +149,7 @@ Class VariantVolume
 		    Dim path As String = reader.Read(reader.Length)
 		    If path.Trim <> "" Then ret = GetFolderItem(path, FolderItem.PathTypeAbsolute) Else ret = Nil
 		  Case TYPE_SYMLINK
-		    If Not Dereference Then
-		      ret = reader.Read(reader.Length)
-		    Else
-		      ret = Me.GetValue(reader.Read(reader.Length), Dereference)
-		    End If
+		    ret = reader.Read(reader.Length)
 		  Else
 		    If Not RaiseEvent DeserializeValue(reader, type, ret) Then Raise New UnsupportedFormatException
 		  End Select
@@ -161,16 +159,16 @@ Class VariantVolume
 	#tag EndMethod
 
 	#tag Method, Flags = &h0
-		Sub SetType(Path As String, Assigns NewType As Integer)
-		  Dim meta As FolderItem = Me.Locate(Path)
+		Sub SetType(Path As String, Dereference As Boolean = True, Assigns NewType As Integer)
+		  Dim meta As FolderItem = Me.Locate(Path, Dereference)
 		  If meta <> Nil Then Me.WriteType(meta, NewType)
 		End Sub
 	#tag EndMethod
 
 	#tag Method, Flags = &h0
 		Sub SetValue(Path As String, Dereference As Boolean = True, Assigns NewValue As Variant)
-		  Dim f As FolderItem = Me.Locate(Path)
-		  If f <> Nil Then Me.WriteValue(f, NewValue, Dereference)
+		  Dim f As FolderItem = Me.Locate(Path, Dereference)
+		  If f <> Nil Then Me.WriteValue(f, NewValue)
 		End Sub
 	#tag EndMethod
 
@@ -188,7 +186,7 @@ Class VariantVolume
 	#tag EndMethod
 
 	#tag Method, Flags = &h1
-		Protected Sub WriteValue(File As FolderItem, Value As Variant, Dereference As Boolean)
+		Protected Sub WriteValue(File As FolderItem, Value As Variant)
 		  If File.AbsolutePath = mVolume.Root.AbsolutePath Then Raise New IOException
 		  If File.Exists Then File.Delete
 		  Dim writer As BinaryStream = BinaryStream.Create(File, True)
@@ -207,6 +205,10 @@ Class VariantVolume
 		    writer.WriteDouble(d)
 		  Case Variant.TypeDouble
 		    writer.WriteDouble(value)
+		  Case Variant.TypeSingle
+		    writer.WriteSingle(value)
+		  Case Variant.TypeLong
+		    writer.WriteInt64(value)
 		  Case Variant.TypeInteger
 		    writer.WriteInt32(value)
 		  Case Variant.TypeNil
@@ -223,20 +225,6 @@ Class VariantVolume
 		      Dim source As FolderItem = Value
 		      writer.Write(source.AbsolutePath)
 		      type = TYPE_FILE
-		    Case Me.ReadType(File) = TYPE_SYMLINK
-		      type = TYPE_SYMLINK
-		      If Dereference Then
-		        Dim link As String = Me.ReadValue(File, False)
-		        Dim g As FolderItem = Me.Locate(link)
-		        If g <> Nil Then
-		          Me.WriteValue(g, Value, Dereference)
-		        Else
-		          Raise New RuntimeException
-		        End If
-		      Else
-		        writer.Write(Me.ReadValue(File, False))
-		      End If
-		      
 		    Else
 		      If Not RaiseEvent SerializeValue(writer, type, Value) Then Raise New UnsupportedFormatException
 		    End Select
