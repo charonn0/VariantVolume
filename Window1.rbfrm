@@ -79,10 +79,23 @@ End
 #tag WindowCode
 	#tag Event
 		Sub Open()
-		  'Dim f As FolderItem = GetOpenFolderItem("")
-		  Dim v As VariantVolume = VariantVolume.Open(App.CreateNewTestPrefs)
+		  'Dim f As FolderItem = GetSaveFolderItem("", "")
+		  'Dim v As VariantVolume = VariantVolume.Create(f)
+		  '
+		  Dim f As FolderItem = App.CreateNewTestPrefs
+		  'SpecialFolder.Desktop.Child("runtime.dump")
+		  'GetOpenFolderItem("")
+		  Dim v As VariantVolume = VariantVolume.Open(f)
+		  'VariantVolume.Open(f)
+		  
+		  'Open(App.CreateNewTestPrefs)
+		  
 		  AddHandler v.DeserializeValue, WeakAddressOf DeserializerHandler
 		  AddHandler v.SerializeValue, WeakAddressOf SerializerHandler
+		  'App.PopulateVolume(v)
+		  'If Not v.CopyItem("lastrun.App.UseGDIPlus", "lastrun.UsingGDIPlus") Then
+		  'Break
+		  'End If
 		  Me.Explore(v)
 		End Sub
 	#tag EndEvent
@@ -90,7 +103,7 @@ End
 
 	#tag Method, Flags = &h21
 		Private Function DeserializerHandler(Sender As VariantVolume, ByteStream As Readable, Type As Integer, ByRef Value As Variant) As Boolean
-		  Break
+		  'Break
 		End Function
 	#tag EndMethod
 
@@ -99,6 +112,7 @@ End
 		  mVolume = v
 		  Listbox1.DeleteAllRows
 		  Listbox1.AddFolder("/")
+		  Listbox1.RowPicture(Listbox1.LastIndex) = folderclosed
 		  Listbox1.RowTag(Listbox1.LastIndex) = RootDir:0
 		  Listbox1.Cell(Listbox1.LastIndex, 1) = "Directory"
 		  
@@ -111,8 +125,8 @@ End
 		  While InStr(s, "//") > 0
 		    s = ReplaceAll(s, "//", "/")
 		  Wend
-		  s = ReplaceAll(s, "/", ".")
-		  If Left(s, 1) = "." Then s = Right(s, s.Len - 1)
+		  s = ReplaceAll(s, "/", mVolume.PathSeparator)
+		  If Left(s, mVolume.PathSeparator.Len) = mVolume.PathSeparator Then s = Right(s, s.Len - mVolume.PathSeparator.Len)
 		  Return s.Trim
 		End Function
 	#tag EndMethod
@@ -125,7 +139,7 @@ End
 
 	#tag Method, Flags = &h21
 		Private Function SerializerHandler(Sender As VariantVolume, ByteStream As Writeable, ByRef Type As Integer, Value As Variant) As Boolean
-		  Break
+		  'Break
 		End Function
 	#tag EndMethod
 
@@ -174,6 +188,8 @@ End
 		Protected Function ValueName(Path As String) As String
 		  Try
 		    Select Case mVolume.GetType(Path)
+		    Case mVolume.TYPE_DIRECTORY
+		      Return ""
 		    Case mVolume.TYPE_SYMLINK
 		      Dim link As String = mVolume.GetValue(Path, False)
 		      Return ValueName(link)
@@ -226,29 +242,109 @@ End
 		      files.Append(item.Name)
 		    End If
 		  Next
+		  Me.RowPicture(row) = folder
 		  files.Sort
 		  folders.Sort
 		  For i As Integer = UBound(folders) DownTo 0
 		    files.Insert(0, folders(i))
 		  Next
 		  For i As Integer = UBound(files) DownTo 0
+		    If files(i).Trim = "" Then Continue
 		    Dim item As FolderItem = f.Child(files(i))
+		    Dim islink As String
+		    If mVolume.GetType(Locate(item)) = mVolume.TYPE_SYMLINK Then
+		      islink = mVolume.GetValue(Locate(item), False)
+		    End If
+		    'If islink <> "" Then item = mVolume.GetValue(islink)
 		    If item.Directory Then
 		      Listbox1.InsertFolder(row + 1, item.Name, indent)
 		      Listbox1.RowTag(Listbox1.LastIndex) = item:indent
+		      Listbox1.RowPicture(Listbox1.LastIndex) = folderclosed
 		    Else
 		      Dim type As Integer = mVolume.GetType(item.Name)
 		      Listbox1.InsertRow(row + 1, item.Name, indent)
-		      Dim tv As Pair = type:mVolume.GetValue(Locate(item))
+		      Listbox1.RowPicture(Listbox1.LastIndex) = file
+		      Dim v As Variant
+		      Try
+		        v = mVolume.GetValue(Locate(item))
+		      Catch
+		        v = Nil
+		      End Try
+		      Dim tv As Pair = type:v
 		      Listbox1.RowTag(Listbox1.LastIndex) = tv
 		    End If
+		    If islink <> "" Then
+		      'Dim g As Graphics = Listbox1.RowPicture(Listbox1.LastIndex).Graphics
+		      'g.DrawPicture(symlink, 0, 0, g.Width, g.Height, 0, 0, symlink.Width, symlink.Height)
+		    End If
 		    Dim p As String = parent
-		    If parent.Trim <> "" Then p = p + "."
+		    If parent.Trim <> "" Then p = p + mVolume.PathSeparator
 		    p = p + item.Name
 		    Listbox1.CellTag(Listbox1.LastIndex, 0) = p
-		    Listbox1.Cell(Listbox1.LastIndex, 1) = TypeName(p)
+		    If islink <> "" Then
+		      Listbox1.Cell(Listbox1.LastIndex, 1) = TypeName(p) + "(Link->" + islink + ")"
+		    Else
+		      Listbox1.Cell(Listbox1.LastIndex, 1) = TypeName(p)
+		    End If
 		    Listbox1.Cell(Listbox1.LastIndex, 2) = ValueName(p)
 		  Next
+		End Sub
+	#tag EndEvent
+	#tag Event
+		Function CellBackgroundPaint(g As Graphics, row As Integer, column As Integer) As Boolean
+		  If Me.ListIndex > -1 And Me.ListIndex = row Then
+		    g.ForeColor = &c0080FF00
+		    g.FillRect(0, 0, g.Width, g.Height)
+		    Return True
+		  End If
+		End Function
+	#tag EndEvent
+	#tag Event
+		Function CellTextPaint(g As Graphics, row As Integer, column As Integer, x as Integer, y as Integer) As Boolean
+		  If Me.ListIndex > -1 And Me.ListIndex = row Then
+		    g.ForeColor = &cFFFFFF00
+		  ElseIf column = 2 Then
+		    Dim p As Pair = Me.RowTag(row)
+		    If p.Left IsA FolderItem Then Return False
+		    Select Case VarType(p.Right)
+		    Case Variant.TypeBoolean
+		      If p.Left.BooleanValue Then
+		        g.ForeColor = &c00FF0000
+		      Else
+		        g.ForeColor = &cFF000000
+		      End If
+		    Case Variant.TypeColor
+		      g.ForeColor = p.Right.ColorValue
+		    Case Variant.TypeCurrency
+		      g.ForeColor = &c00800000
+		    Case Variant.TypeDate
+		      g.ForeColor = &c00000000
+		    Case Variant.TypeDouble
+		      g.ForeColor = &c00808000
+		    Case Variant.TypeSingle
+		      g.ForeColor = &c0080C000
+		    Case Variant.TypeLong
+		      g.ForeColor = &c40808000
+		    Case Variant.TypeInteger
+		      g.ForeColor = &c0080FF00
+		    Case Variant.TypeNil
+		      g.ForeColor = &cC0C0C000
+		    Case Variant.TypeString
+		      g.ForeColor = &c8080FF00
+		    Else
+		      g.ForeColor = &c00000000
+		    End Select
+		  Else
+		    g.ForeColor = &c00000000
+		  End If
+		  g.DrawString(Me.Cell(row, column), x, y)
+		  Return True
+		End Function
+	#tag EndEvent
+	#tag Event
+		Sub CollapseRow(row As Integer)
+		  Dim f As FolderItem = Pair(Me.RowTag(row)).Left
+		  If f.Directory Then Me.RowPicture(row) = folderclosed
 		End Sub
 	#tag EndEvent
 #tag EndEvents
