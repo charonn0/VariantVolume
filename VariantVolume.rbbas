@@ -11,7 +11,46 @@ Class VariantVolume
 		Private Sub Constructor(VolumeRef As VirtualVolume)
 		  If VolumeRef = Nil Then Raise New NilObjectException
 		  mVolume = VolumeRef
+		  Dim f As FolderItem = mVolume.Root.Child(".META")
+		  If Not f.Exists Then
+		    f.CreateAsFolder
+		  End If
+		  If Not f.Directory Then
+		    Raise New RuntimeException ' not a VariantVolume
+		  Else
+		    If ReadValue(f.Child("PATH_SEPARATOR")).StringValue <> "" Then 
+		      mPathSeparator = Me.ReadValue(f.Child("PATH_SEPARATOR"))
+		    Else
+		      Me.WriteValue(f.Child("PATH_SEPARATOR"), PathSeparator)
+		    End If
+		  End If
 		End Sub
+	#tag EndMethod
+
+	#tag Method, Flags = &h0
+		Function CopyItem(Source As String, Destination As String) As Boolean
+		  Dim value As Variant = Me.GetValue(Source)
+		  Me.SetValue(Destination) = value
+		  mVolume.Flush
+		  Return Me.GetValue(Source) = Me.GetValue(Destination)
+		End Function
+	#tag EndMethod
+
+	#tag Method, Flags = &h0
+		Function Count(Path As String) As Integer
+		  Dim f As FolderItem = Me.Locate(Path)
+		  If f <> Nil And f.Exists And f.Directory Then
+		    Dim x As Integer
+		    For i As Integer = 0 To f.Count - 1
+		      Dim item As FolderItem = f.Item(i)
+		      If Right(item.Name, 5) = ".META" Then Continue
+		      x = x + 1
+		    Next
+		    Return x
+		  End If
+		  Raise New NilObjectException
+		  
+		End Function
 	#tag EndMethod
 
 	#tag Method, Flags = &h0
@@ -25,9 +64,24 @@ Class VariantVolume
 	#tag EndMethod
 
 	#tag Method, Flags = &h0
-		Function CreateDirectory(Path As String) As Boolean
-		  Dim f As FolderItem = Me.Locate(Path, True)
+		Function CreateDirectory(Path As String, CreateParents As Boolean) As Boolean
+		  Dim parts() As String = Split(Path, PathSeparator)
+		  Dim paths As String
+		  For i As Integer = 0 To UBound(parts)
+		    paths = paths + parts(i)
+		    Dim item As FolderItem = Me.Locate(paths)
+		    If item = Nil Then Return False
+		    App.Assert(item.Name.Trim <> "")
+		    If i <> UBound(parts) Then
+		      paths = paths + PathSeparator
+		      If Not item.Exists Then
+		        If CreateParents Then item.CreateAsFolder Else Return False
+		      End If
+		    End If
+		  Next
+		  Dim f As FolderItem = Me.Locate(paths)
 		  If f = Nil Or f.Exists Then Return False
+		  App.Assert(f.Name.Trim <> "")
 		  f.CreateAsFolder
 		  Me.WriteType(f, TYPE_DIRECTORY)
 		  Return True
@@ -35,13 +89,16 @@ Class VariantVolume
 	#tag EndMethod
 
 	#tag Method, Flags = &h0
-		Sub Delete(Path As String, Dereference As Boolean = False)
+		Function Delete(Path As String, Dereference As Boolean = False) As Boolean
 		  Dim f As FolderItem = Me.Locate(Path, Dereference)
 		  If f <> Nil And f.AbsolutePath <> mVolume.Root.AbsolutePath Then
+		    If f.Directory And f.Count > 0 Then Return False
 		    f.Parent.Child(f.Name + ".META").Delete
 		    f.Delete
+		    mVolume.Flush
+		    Return Not f.Exists
 		  End If
-		End Sub
+		End Function
 	#tag EndMethod
 
 	#tag Method, Flags = &h0
@@ -59,16 +116,33 @@ Class VariantVolume
 		End Function
 	#tag EndMethod
 
+	#tag Method, Flags = &h0
+		Function Item(Path As String, Index As Integer) As String
+		  Dim f As FolderItem = Me.Locate(Path)
+		  If f <> Nil And f.Exists And f.Directory Then
+		    Dim x As Integer
+		    For i As Integer = 0 To f.Count - 1
+		      Dim item As FolderItem = f.Item(i)
+		      If Right(item.Name, 5) = ".META" Then Continue
+		      If x = Index Then Return item.Name
+		      x = x + 1
+		    Next
+		  End If
+		  Raise New OutOfBoundsException
+		  
+		End Function
+	#tag EndMethod
+
 	#tag Method, Flags = &h1
-		Protected Function Locate(Path As String, Dereference As Boolean) As FolderItem
-		  Dim parts() As String = Split(Path, ".")
+		Protected Function Locate(Path As String, Dereference As Boolean = True) As FolderItem
+		  Dim parts() As String = Split(Path, PathSeparator)
 		  Dim item As FolderItem = mVolume.Root
 		  For i As Integer = 0 To UBound(parts)
 		    If item <> Nil Then
 		      item = item.Child(parts(i))
 		      Select Case True
 		      Case Me.ReadType(item) = TYPE_SYMLINK And Dereference
-		        item = Me.Locate(Me.ReadValue(item), True)
+		        item = Me.Locate(Me.ReadValue(item))
 		      Case Not item.Directory And i <> UBound(parts)
 		        Return Nil
 		      End Select
@@ -76,6 +150,7 @@ Class VariantVolume
 		      Return Nil
 		    End If
 		  Next
+		  If item.AbsolutePath = mVolume.Root.AbsolutePath And Dereference Then Return Nil
 		  Return item
 		End Function
 	#tag EndMethod
@@ -108,10 +183,11 @@ Class VariantVolume
 		  If File.AbsolutePath = mVolume.Root.AbsolutePath Then Return mVolume.Root
 		  Dim reader As BinaryStream
 		  Try
-		    #pragma BreakOnExceptions Off
+		    '#pragma BreakOnExceptions Off
 		    reader = BinaryStream.Open(File)
-		    #pragma BreakOnExceptions On
+		    '#pragma BreakOnExceptions On
 		  Catch Err As IOException
+		    If File.Directory Then Return File
 		    Return Nil
 		  End Try
 		  reader.LittleEndian = False
@@ -139,7 +215,7 @@ Class VariantVolume
 		    ret = reader.ReadInt64
 		  Case Variant.TypeInteger
 		    ret = reader.ReadInt32
-		  Case Variant.TypeNil
+		  Case Variant.TypeNil, TYPE_INVALID
 		    ret = Nil
 		  Case Variant.TypeString
 		    ret = reader.Read(reader.Length)
@@ -151,6 +227,7 @@ Class VariantVolume
 		  Case TYPE_SYMLINK
 		    ret = reader.Read(reader.Length)
 		  Else
+		    '#pragma BreakOnExceptions Off
 		    If Not RaiseEvent DeserializeValue(reader, type, ret) Then Raise New UnsupportedFormatException
 		  End Select
 		  reader.Close
@@ -226,9 +303,11 @@ Class VariantVolume
 		      writer.Write(source.AbsolutePath)
 		      type = TYPE_FILE
 		    Else
+		      '#pragma BreakOnExceptions Off
 		      If Not RaiseEvent SerializeValue(writer, type, Value) Then Raise New UnsupportedFormatException
 		    End Select
 		  Else
+		    '#pragma BreakOnExceptions Off
 		    If Not RaiseEvent SerializeValue(writer, type, Value) Then Raise New UnsupportedFormatException
 		  End Select
 		  Me.WriteType(File, type)
@@ -247,8 +326,21 @@ Class VariantVolume
 
 
 	#tag Property, Flags = &h21
+		Private mPathSeparator As String = "."
+	#tag EndProperty
+
+	#tag Property, Flags = &h21
 		Private mVolume As VirtualVolume
 	#tag EndProperty
+
+	#tag ComputedProperty, Flags = &h0
+		#tag Getter
+			Get
+			  return mPathSeparator
+			End Get
+		#tag EndGetter
+		PathSeparator As String
+	#tag EndComputedProperty
 
 
 	#tag Constant, Name = CURRENT_VERSION, Type = Double, Dynamic = False, Default = \"1", Scope = Private
