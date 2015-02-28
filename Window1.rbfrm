@@ -82,7 +82,7 @@ End
 		  'Dim f As FolderItem = GetSaveFolderItem("", "")
 		  'Dim v As VariantVolume = VariantVolume.Create(f)
 		  '
-		  Dim f As FolderItem = App.CreateNewTestPrefs
+		  Dim f As FolderItem = GetOpenFolderItem("")'App.CreateNewTestPrefs
 		  'SpecialFolder.Desktop.Child("runtime.dump")
 		  'GetOpenFolderItem("")
 		  Dim v As VariantVolume = VariantVolume.Open(f)
@@ -252,16 +252,14 @@ End
 		    If files(i).Trim = "" Then Continue
 		    Dim item As FolderItem = f.Child(files(i))
 		    Dim islink As String
-		    If mVolume.GetType(Locate(item)) = mVolume.TYPE_SYMLINK Then
-		      islink = mVolume.GetValue(Locate(item), False)
-		    End If
-		    'If islink <> "" Then item = mVolume.GetValue(islink)
-		    If item.Directory Then
+		    Dim type As Integer = mVolume.GetType(Locate(item))
+		    If type = mVolume.TYPE_SYMLINK Then islink = mVolume.GetValue(Locate(item), False)
+		    
+		    If item.Directory Or type = mVolume.TYPE_DIRECTORY Then
 		      Listbox1.InsertFolder(row + 1, item.Name, indent)
 		      Listbox1.RowTag(Listbox1.LastIndex) = item:indent
 		      Listbox1.RowPicture(Listbox1.LastIndex) = folderclosed
 		    Else
-		      Dim type As Integer = mVolume.GetType(item.Name)
 		      Listbox1.InsertRow(row + 1, item.Name, indent)
 		      Listbox1.RowPicture(Listbox1.LastIndex) = file
 		      Dim v As Variant
@@ -282,7 +280,7 @@ End
 		    p = p + item.Name
 		    Listbox1.CellTag(Listbox1.LastIndex, 0) = p
 		    If islink <> "" Then
-		      Listbox1.Cell(Listbox1.LastIndex, 1) = TypeName(p) + "(Link->" + islink + ")"
+		      Listbox1.Cell(Listbox1.LastIndex, 1) = TypeName(p) + "->" + islink
 		    Else
 		      Listbox1.Cell(Listbox1.LastIndex, 1) = TypeName(p)
 		    End If
