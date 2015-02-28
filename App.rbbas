@@ -1,6 +1,28 @@
 #tag Class
 Protected Class App
 Inherits Application
+	#tag Event
+		Sub Open()
+		  'Dim prefs As VariantVolume = VariantVolume.Create(SpecialFolder.Desktop.Child("httpreqconfig.dat"))
+		  'Call prefs.CreateDirectory("HTTP", True)
+		  'prefs.SetValue("HTTP.Client") = "Profiles.0.HTTP.Client"
+		  'prefs.SetType("HTTP.Client") = VariantVolume.TYPE_DIRECTORY
+		  'prefs.SetValue("HTTP.Server") = "Profiles.0.HTTP.Server"
+		  'prefs.SetType("HTTP.Server") = VariantVolume.TYPE_DIRECTORY
+		  'Call prefs.CreateDirectory("Profiles.0.HTTP.Client", True)
+		  'Call prefs.CreateDirectory("Profiles.0.HTTP.Server", True)
+		  'Call prefs.CreateDirectory("GUI.Options", True)
+		  'prefs.SetValue("HTTP.Client.Protocol") = 1.1
+		  'prefs.SetValue("HTTP.Server.Protocol") = 1.1
+		  'prefs.SetValue("HTTP.Client.GZip") = True
+		  'prefs.SetValue("HTTP.Server.GZip") = True
+		  'prefs.SetValue("HTTP.Server.EnforceTypes") = True
+		  'prefs.Close
+		  'Quit
+		End Sub
+	#tag EndEvent
+
+
 	#tag Method, Flags = &h0
 		Sub Assert(BoolExpression As Boolean)
 		  If Not BoolExpression Then Raise New RuntimeException

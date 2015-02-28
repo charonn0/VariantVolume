@@ -7,23 +7,11 @@ Class VariantVolume
 		End Sub
 	#tag EndMethod
 
-	#tag Method, Flags = &h21
-		Private Sub Constructor(VolumeRef As VirtualVolume)
+	#tag Method, Flags = &h1
+		Protected Sub Constructor(VolumeRef As VirtualVolume)
 		  If VolumeRef = Nil Then Raise New NilObjectException
 		  mVolume = VolumeRef
-		  Dim f As FolderItem = mVolume.Root.Child(".META")
-		  If Not f.Exists Then
-		    f.CreateAsFolder
-		  End If
-		  If Not f.Directory Then
-		    Raise New RuntimeException ' not a VariantVolume
-		  Else
-		    If ReadValue(f.Child("PATH_SEPARATOR")).StringValue <> "" Then 
-		      mPathSeparator = Me.ReadValue(f.Child("PATH_SEPARATOR"))
-		    Else
-		      Me.WriteValue(f.Child("PATH_SEPARATOR"), PathSeparator)
-		    End If
-		  End If
+		  If Me.PathSeparator = "" Then Me.PathSeparator = "."
 		End Sub
 	#tag EndMethod
 
@@ -37,8 +25,8 @@ Class VariantVolume
 	#tag EndMethod
 
 	#tag Method, Flags = &h0
-		Function Count(Path As String) As Integer
-		  Dim f As FolderItem = Me.Locate(Path)
+		Function Count(DirectoryPath As String, Dereference As Boolean = True) As Integer
+		  Dim f As FolderItem = Me.Locate(DirectoryPath, Dereference)
 		  If f <> Nil And f.Exists And f.Directory Then
 		    Dim x As Integer
 		    For i As Integer = 0 To f.Count - 1
@@ -55,8 +43,16 @@ Class VariantVolume
 
 	#tag Method, Flags = &h0
 		 Shared Function Create(RegFile As FolderItem) As VariantVolume
+		  Dim v As VirtualVolume = RegFile.CreateVirtualVolume()
+		  Dim f As FolderItem = v.Root.Child(".META")
+		  f.CreateAsFolder
+		  f = f.Child("PATH_SEPARATOR")
+		  Dim bs As BinaryStream = BinaryStream.Create(f, True)
+		  bs.Write(".")
+		  bs.Close
+		  v.Flush
 		  Try
-		    Return New VariantVolume(RegFile.CreateVirtualVolume)
+		    Return New VariantVolume(v)
 		  Catch
 		    Return Nil
 		  End Try
@@ -64,14 +60,14 @@ Class VariantVolume
 	#tag EndMethod
 
 	#tag Method, Flags = &h0
-		Function CreateDirectory(Path As String, CreateParents As Boolean) As Boolean
+		Function CreateDirectory(Path As String, CreateParents As Boolean, Dereference As Boolean = True) As Boolean
 		  Dim parts() As String = Split(Path, PathSeparator)
 		  Dim paths As String
 		  For i As Integer = 0 To UBound(parts)
 		    paths = paths + parts(i)
-		    Dim item As FolderItem = Me.Locate(paths)
+		    Dim item As FolderItem = Me.Locate(paths, Dereference)
 		    If item = Nil Then Return False
-		    App.Assert(item.Name.Trim <> "")
+		    If item.Name.Trim = "" Then Return False
 		    If i <> UBound(parts) Then
 		      paths = paths + PathSeparator
 		      If Not item.Exists Then
@@ -79,9 +75,9 @@ Class VariantVolume
 		      End If
 		    End If
 		  Next
-		  Dim f As FolderItem = Me.Locate(paths)
+		  Dim f As FolderItem = Me.Locate(paths, Dereference)
 		  If f = Nil Or f.Exists Then Return False
-		  App.Assert(f.Name.Trim <> "")
+		  If f.Name.Trim = "" Then Return False
 		  f.CreateAsFolder
 		  Me.WriteType(f, TYPE_DIRECTORY)
 		  Return True
@@ -89,7 +85,7 @@ Class VariantVolume
 	#tag EndMethod
 
 	#tag Method, Flags = &h0
-		Function Delete(Path As String, Dereference As Boolean = False) As Boolean
+		Function Delete(Path As String, Dereference As Boolean = True) As Boolean
 		  Dim f As FolderItem = Me.Locate(Path, Dereference)
 		  If f <> Nil And f.AbsolutePath <> mVolume.Root.AbsolutePath Then
 		    If f.Directory And f.Count > 0 Then Return False
@@ -117,8 +113,19 @@ Class VariantVolume
 	#tag EndMethod
 
 	#tag Method, Flags = &h0
-		Function Item(Path As String, Index As Integer) As String
-		  Dim f As FolderItem = Me.Locate(Path)
+		 Shared Function IsAVariantVolume(RegFile As FolderItem) As Boolean
+		  Dim bs As BinaryStream = BinaryStream.Open(RegFile, True)
+		  If bs.Read(4) <> "VFSv" Then Return False ' Not a VariantVolume
+		  bs.Close
+		  Dim v As VirtualVolume = RegFile.OpenAsVirtualVolume()
+		  Dim f As FolderItem = v.Root.Child(".META")
+		  Return f.Exists And f.Directory
+		End Function
+	#tag EndMethod
+
+	#tag Method, Flags = &h0
+		Function Item(DirectoryPath As String, Index As Integer, Dereference As Boolean = True) As String
+		  Dim f As FolderItem = Me.Locate(DirectoryPath, Dereference)
 		  If f <> Nil And f.Exists And f.Directory Then
 		    Dim x As Integer
 		    For i As Integer = 0 To f.Count - 1
@@ -138,17 +145,28 @@ Class VariantVolume
 		  Dim parts() As String = Split(Path, PathSeparator)
 		  Dim item As FolderItem = mVolume.Root
 		  For i As Integer = 0 To UBound(parts)
-		    If item <> Nil Then
-		      item = item.Child(parts(i))
-		      Select Case True
-		      Case Me.ReadType(item) = TYPE_SYMLINK And Dereference
-		        item = Me.Locate(Me.ReadValue(item))
-		      Case Not item.Directory And i <> UBound(parts)
-		        Return Nil
-		      End Select
-		    Else
+		    If item = Nil Then
+		      Break
 		      Return Nil
+		      
 		    End If
+		    Dim child As FolderItem = item.Child(parts(i))
+		    Select Case True
+		    Case child = Nil
+		      Break
+		      Return Nil
+		      
+		    Case (Me.ReadType(child) = TYPE_SYMLINK Or Me.ReadType(child) = TYPE_DIRECTORY) And Dereference
+		      Dim v As Variant = Me.ReadValue(child)
+		      If v IsA FolderItem Then 
+		        child = v
+		      Else
+		        child = Me.Locate(v.StringValue)
+		      End If
+		    Case Not item.Directory And i <> UBound(parts)
+		      Return Nil
+		    End Select
+		    item = child
 		  Next
 		  If item.AbsolutePath = mVolume.Root.AbsolutePath And Dereference Then Return Nil
 		  Return item
@@ -157,8 +175,10 @@ Class VariantVolume
 
 	#tag Method, Flags = &h0
 		 Shared Function Open(RegFile As FolderItem) As VariantVolume
+		  If Not IsAVariantVolume(RegFile) Then Return Nil
+		  Dim v As VirtualVolume = RegFile.OpenAsVirtualVolume()
 		  Try
-		    Return New VariantVolume(RegFile.OpenAsVirtualVolume)
+		    Return New VariantVolume(v)
 		  Catch
 		    Return Nil
 		  End Try
@@ -169,7 +189,8 @@ Class VariantVolume
 		Protected Function ReadType(File As FolderItem) As Integer
 		  If File.AbsolutePath = mVolume.Root.AbsolutePath Then Return TYPE_DIRECTORY
 		  If File <> Nil And File.Parent <> Nil Then File = File.Parent.Child(File.Name + ".META")
-		  If File = Nil Or Not File.Exists Or File.Directory Then Return TYPE_INVALID
+		  If File = Nil Or Not File.Exists Then Return TYPE_INVALID
+		  If File.Directory Then Return TYPE_DIRECTORY
 		  Dim bs As BinaryStream = BinaryStream.Open(File)
 		  bs.LittleEndian = False
 		  Dim type As Integer = bs.ReadInt32
@@ -224,7 +245,7 @@ Class VariantVolume
 		  Case TYPE_FILE
 		    Dim path As String = reader.Read(reader.Length)
 		    If path.Trim <> "" Then ret = GetFolderItem(path, FolderItem.PathTypeAbsolute) Else ret = Nil
-		  Case TYPE_SYMLINK
+		  Case TYPE_SYMLINK, TYPE_DIRECTORY
 		    ret = reader.Read(reader.Length)
 		  Else
 		    '#pragma BreakOnExceptions Off
@@ -292,7 +313,7 @@ Class VariantVolume
 		    ' nothing
 		  Case Variant.TypeString
 		    writer.Write(value)
-		  Case Variant.TypeObject
+		  Else
 		    Select Case True
 		    Case Value IsA Picture
 		      Dim p As Picture = Value
@@ -303,12 +324,8 @@ Class VariantVolume
 		      writer.Write(source.AbsolutePath)
 		      type = TYPE_FILE
 		    Else
-		      '#pragma BreakOnExceptions Off
 		      If Not RaiseEvent SerializeValue(writer, type, Value) Then Raise New UnsupportedFormatException
 		    End Select
-		  Else
-		    '#pragma BreakOnExceptions Off
-		    If Not RaiseEvent SerializeValue(writer, type, Value) Then Raise New UnsupportedFormatException
 		  End Select
 		  Me.WriteType(File, type)
 		  Writer.Close
@@ -326,7 +343,7 @@ Class VariantVolume
 
 
 	#tag Property, Flags = &h21
-		Private mPathSeparator As String = "."
+		Private mPathSeparator As String
 	#tag EndProperty
 
 	#tag Property, Flags = &h21
@@ -336,9 +353,29 @@ Class VariantVolume
 	#tag ComputedProperty, Flags = &h0
 		#tag Getter
 			Get
+			  If mPathSeparator = "" Then
+			    Dim f As FolderItem = mVolume.Root.Child(".META")
+			    If Not f.Directory Or Not f.Exists Then
+			      mPathSeparator = "" ' not a VariantVolume
+			    Else
+			      mPathSeparator = Me.ReadValue(f.Child("PATH_SEPARATOR"))
+			    End If
+			  End If
 			  return mPathSeparator
 			End Get
 		#tag EndGetter
+		#tag Setter
+			Set
+			  Dim f As FolderItem = mVolume.Root.Child(".META")
+			  If Not f.Exists Then f.CreateAsFolder
+			  If Not f.Directory Then
+			    Raise New RuntimeException ' not a VariantVolume
+			  Else
+			    Me.WriteValue(f.Child("PATH_SEPARATOR"), value)
+			    mPathSeparator = value
+			  End If
+			End Set
+		#tag EndSetter
 		PathSeparator As String
 	#tag EndComputedProperty
 
@@ -382,6 +419,12 @@ Class VariantVolume
 			Visible=true
 			Group="ID"
 			InheritedFrom="Object"
+		#tag EndViewProperty
+		#tag ViewProperty
+			Name="PathSeparator"
+			Group="Behavior"
+			Type="String"
+			EditorType="MultiLineEditor"
 		#tag EndViewProperty
 		#tag ViewProperty
 			Name="Super"
