@@ -156,9 +156,9 @@ Class VariantVolume
 		      Break
 		      Return Nil
 		      
-		    Case (Me.ReadType(child) = TYPE_SYMLINK Or Me.ReadType(child) = TYPE_DIRECTORY) And Dereference
+		    Case Me.ReadType(child) = TYPE_SYMLINK And Dereference
 		      Dim v As Variant = Me.ReadValue(child)
-		      If v IsA FolderItem Then 
+		      If v IsA FolderItem Then
 		        child = v
 		      Else
 		        child = Me.Locate(v.StringValue)

@@ -253,7 +253,8 @@ End
 		    Dim item As FolderItem = f.Child(files(i))
 		    Dim islink As String
 		    Dim type As Integer = mVolume.GetType(Locate(item))
-		    If type = mVolume.TYPE_SYMLINK Then islink = mVolume.GetValue(Locate(item), False)
+		    Dim v As Variant = mVolume.GetValue(Locate(item), False)
+		    If type = mVolume.TYPE_SYMLINK And VarType(v) = Variant.TypeString Then islink = v
 		    
 		    If item.Directory Or type = mVolume.TYPE_DIRECTORY Then
 		      Listbox1.InsertFolder(row + 1, item.Name, indent)
@@ -262,7 +263,6 @@ End
 		    Else
 		      Listbox1.InsertRow(row + 1, item.Name, indent)
 		      Listbox1.RowPicture(Listbox1.LastIndex) = file
-		      Dim v As Variant
 		      Try
 		        v = mVolume.GetValue(Locate(item))
 		      Catch
