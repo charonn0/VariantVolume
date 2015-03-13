@@ -14,7 +14,7 @@ Begin Window Window1
    MaxHeight       =   32000
    MaximizeButton  =   False
    MaxWidth        =   32000
-   MenuBar         =   1658941439
+   MenuBar         =   1685170175
    MenuBarVisible  =   True
    MinHeight       =   64
    MinimizeButton  =   True
@@ -77,28 +77,31 @@ End
 #tag EndWindow
 
 #tag WindowCode
-	#tag Event
-		Sub Open()
-		  'Dim f As FolderItem = GetSaveFolderItem("", "")
-		  'Dim v As VariantVolume = VariantVolume.Create(f)
-		  '
-		  Dim f As FolderItem = GetOpenFolderItem("")'App.CreateNewTestPrefs
-		  'SpecialFolder.Desktop.Child("runtime.dump")
-		  'GetOpenFolderItem("")
-		  Dim v As VariantVolume = VariantVolume.Open(f)
-		  'VariantVolume.Open(f)
-		  
-		  'Open(App.CreateNewTestPrefs)
-		  
-		  AddHandler v.DeserializeValue, WeakAddressOf DeserializerHandler
-		  AddHandler v.SerializeValue, WeakAddressOf SerializerHandler
-		  'App.PopulateVolume(v)
-		  'If Not v.CopyItem("lastrun.App.UseGDIPlus", "lastrun.UsingGDIPlus") Then
-		  'Break
-		  'End If
-		  Me.Explore(v)
-		End Sub
-	#tag EndEvent
+	#tag MenuHandler
+		Function CloseItem() As Boolean Handles CloseItem.Action
+			mVolume.Close
+			mVolume = Nil
+			Listbox1.DeleteAllRows
+			Return True
+			
+		End Function
+	#tag EndMenuHandler
+
+	#tag MenuHandler
+		Function OpenItem() As Boolean Handles OpenItem.Action
+			Dim f As FolderItem = GetOpenFolderItem("")
+			Dim v As VariantVolume = VariantVolume.Open(f)
+			If v <> Nil Then
+			AddHandler v.DeserializeValue, WeakAddressOf DeserializerHandler
+			AddHandler v.SerializeValue, WeakAddressOf SerializerHandler
+			Me.Explore(v)
+			Else
+			Call MsgBox("The volume is corrupt or not a volume.", 16, "Not a volume file")
+			End If
+			Return True
+			
+		End Function
+	#tag EndMenuHandler
 
 
 	#tag Method, Flags = &h21

@@ -9,6 +9,7 @@ Picture=folder;folder.png;&h4B1547FF;&h0;false;1;&h0
 Picture=folderclosed;folderclosed.png;&h3EAB1FFF;&h0;false;1;&h0
 Picture=file;file.png;&hD2537FF;&h0;false;1;&h0
 Picture=symlink;symlink.png;&h7DDD1FFF;&h0;false;1;&h0
+MenuBar=MenuBar1;MenuBar1.rbmnu;&h6471A7FF;&h0;false
 DefaultWindow=Window1
 MajorVersion=1
 MinorVersion=0
